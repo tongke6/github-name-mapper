@@ -1,0 +1,51 @@
+/* GitHub Name Mapper - Content Styles */
+
+/* 替换后的用户名样式 */
+.gnm-replaced {
+  position: relative;
+}
+
+/* 悬停时显示详细信息 */
+.gnm-replaced::after {
+  content: attr(title);
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  background: #1c2128;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: pre-line;
+  color: #e6edf3;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.gnm-replaced::before {
+  content: '';
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #30363d;
+  z-index: 10000;
+}
+
+/* 可选：添加微妙的视觉指示 */
+.gnm-replaced {
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* 花名部分的颜色（可选） */
+.gnm-replaced .gnm-nick {
+  color: #a371f7;
+}
+

@@ -1,0 +1,31 @@
+{
+  "code": 200,
+  "data": {
+    "total": 3,
+    "list": [
+      {
+        "id": 1,
+        "domain": "zhangsan",
+        "nickname": "张三",
+        "account": "zhangsan-dev",
+        "email": "zhangsan@example.com"
+      },
+      {
+        "id": 2,
+        "domain": "lisi",
+        "nickname": "李四",
+        "account": "lisi-github",
+        "email": "lisi@example.com"
+      },
+      {
+        "id": 3,
+        "domain": "wangwu",
+        "nickname": "王五",
+        "account": "wangwu123",
+        "email": "wangwu@example.com"
+      }
+    ]
+  },
+  "success": true,
+  "finished": true
+}
