@@ -38,16 +38,16 @@ async function init() {
     featureHighlight = config.data.featureHighlight !== false;
     featureAvatarHighlight = config.data.featureAvatarHighlight !== false;
     featureMention = config.data.featureMention !== false;
-    
-    log('初始化', { 
-      enabled: isEnabled, 
-      featureReplace, 
+
+    log('初始化', {
+      enabled: isEnabled,
+      featureReplace,
       featureHighlight,
       featureAvatarHighlight,
       featureMention,
-      debug: isDebug 
+      debug: isDebug
     });
-    
+
     if (isEnabled) {
       await loadDevelopers();
       if (featureReplace) {
@@ -139,7 +139,7 @@ function restoreOriginal() {
 // 替换用户名的主函数
 function replaceUsernames() {
   if (!isEnabled || !featureReplace || developerMap.size === 0) return;
-  
+
   // 选择器列表 - GitHub 上显示用户名的常见位置
   const selectors = [
     // 作者链接
@@ -171,13 +171,13 @@ function replaceUsernames() {
     // 协作者
     '.collaborator-list a'
   ];
-  
+
   const elements = document.querySelectorAll(selectors.join(', '));
-  
+
   elements.forEach(el => {
     processElement(el);
   });
-  
+
   // 处理特殊情况：纯文本显示的用户名
   processTextNodes();
 }
@@ -187,7 +187,7 @@ function replaceUsernames() {
 // 高亮已识别用户的头像
 function highlightAvatars() {
   if (!isEnabled || !featureAvatarHighlight || developerMap.size === 0) return;
-  
+
   // GitHub 头像选择器
   const avatarSelectors = [
     'img.avatar',
@@ -200,31 +200,46 @@ function highlightAvatars() {
     '.TimelineItem-avatar img',
     '.AvatarStack-body img',
     'a[data-hovercard-type="user"] img',
+    // PR conversation 页面特殊选择器
+    '.timeline-comment-avatar img',          // PR timeline 评论头像
+    '.timeline-comment .avatar img',         // PR timeline 另一种结构
+    'a.author img',                          // 作者链接中的头像
+    '.timeline-comment-header img',          // PR conversation header 头像
+    '.avatar-stack img',                     // 头像堆叠
+    'a[href^="/"] img.avatar',              // 任何用户链接中的 avatar
   ];
-  
+
   const avatars = document.querySelectorAll(avatarSelectors.join(', '));
   log('找到头像', { count: avatars.length });
-  
+
   avatars.forEach(avatar => {
     // 跳过已处理的
     if (avatar.hasAttribute('data-gnm-avatar')) return;
-    
+
     // 跳过排除区域
-    if (isInExcludedArea(avatar)) return;
-    
+    if (isInExcludedArea(avatar)) {
+      log('跳过排除区域的头像');
+      return;
+    }
+
     // 尝试从父链接或 hovercard 获取用户名
     const username = extractUsernameFromAvatar(avatar);
-    if (!username) return;
-    
+    if (!username) {
+      log('无法提取用户名', { alt: avatar.getAttribute('alt'), src: avatar.getAttribute('src')?.substring(0, 50) });
+      return;
+    }
+
     const devInfo = developerMap.get(username.toLowerCase());
     if (devInfo) {
       avatar.setAttribute('data-gnm-avatar', username);
       avatar.classList.add('gnm-avatar-highlight');
-      
+
       // 添加提示
       avatar.title = `${devInfo.displayName}\nDomain: ${devInfo.domain}\nEmail: ${devInfo.github_acc}`;
-      
-      log('头像高亮', { username, nick: devInfo.nick });
+
+      log('头像高亮成功', { username, nick: devInfo.nick });
+    } else {
+      log('用户不在映射表中', { username });
     }
   });
 }
@@ -232,8 +247,8 @@ function highlightAvatars() {
 // 从头像元素提取用户名
 function extractUsernameFromAvatar(avatar) {
   // 从 data-hovercard-url 提取（最可靠）
-  const hovercardUrl = avatar.getAttribute('data-hovercard-url') || 
-                       avatar.closest('[data-hovercard-url]')?.getAttribute('data-hovercard-url');
+  const hovercardUrl = avatar.getAttribute('data-hovercard-url') ||
+    avatar.closest('[data-hovercard-url]')?.getAttribute('data-hovercard-url');
   if (hovercardUrl && hovercardUrl.includes('/users/')) {
     const match = hovercardUrl.match(/\/users\/([^\/\?]+)/);
     if (match) {
@@ -241,7 +256,7 @@ function extractUsernameFromAvatar(avatar) {
       return match[1];
     }
   }
-  
+
   // 从 alt 属性提取（可能有 @ 前缀也可能没有）
   const alt = avatar.getAttribute('alt');
   if (alt) {
@@ -252,18 +267,39 @@ function extractUsernameFromAvatar(avatar) {
       return username;
     }
   }
-  
-  // 从父链接的 href 提取
+
+  // 从父链接的 href 提取（包括 PR conversation 页面）
   const parentLink = avatar.closest('a[href^="/"]');
   if (parentLink) {
     const href = parentLink.getAttribute('href');
-    const match = href.match(/^\/([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)$/);
-    if (match) {
+    log('检查父链接', { href });
+    // 匹配 /username 或 /username/xxx 格式
+    const match = href.match(/^\/([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)(?:\/|$)/);
+    if (match && !['issues', 'pull', 'orgs', 'teams', 'settings', 'notifications', 'sponsors'].includes(match[1])) {
       log('从父链接提取用户名', match[1]);
       return match[1];
     }
   }
-  
+
+  // 针对 PR conversation：尝试从 timeline-comment 或其他父容器提取
+  const timelineComment = avatar.closest('.timeline-comment, .timeline-comment-group, .TimelineItem');
+  if (timelineComment) {
+    log('在 timeline-comment 中查找作者');
+    // 查找作者链接（多种可能的选择器）
+    const authorLink = timelineComment.querySelector(
+      'a.author, a[data-hovercard-type="user"], .timeline-comment-header a[href^="/"], h3 a[href^="/"]'
+    );
+    if (authorLink) {
+      const href = authorLink.getAttribute('href');
+      log('找到作者链接', { href });
+      const match = href?.match(/^\/([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)(?:\/|$)/);
+      if (match && !['issues', 'pull', 'orgs', 'teams', 'settings', 'notifications'].includes(match[1])) {
+        log('从 timeline-comment 作者链接提取用户名', match[1]);
+        return match[1];
+      }
+    }
+  }
+
   // 从 src URL 提取（GitHub 头像 URL 格式）
   const src = avatar.getAttribute('src');
   if (src) {
@@ -275,7 +311,7 @@ function extractUsernameFromAvatar(avatar) {
       return match[1];
     }
   }
-  
+
   return null;
 }
 
@@ -300,38 +336,57 @@ function isInExcludedArea(el) {
 function processElement(el) {
   // 跳过已处理的元素
   if (el.hasAttribute('data-gnm-original')) return;
-  
+
   // 跳过排除区域
   if (isInExcludedArea(el)) return;
-  
+
   const text = el.textContent.trim();
   const username = extractUsername(el, text);
-  
+
   if (!username) return;
-  
+
   const devInfo = developerMap.get(username.toLowerCase());
   if (devInfo) {
     // 保存原始值
     el.setAttribute('data-gnm-original', text);
-    
+
     // 根据开关添加样式
     if (featureHighlight) {
       el.classList.add('gnm-replaced', 'gnm-highlight');
     } else {
       el.classList.add('gnm-replaced');
     }
-    
-    // 只替换用户名部分
-    if (text === username || text === `@${username}`) {
-      const prefix = text.startsWith('@') ? '@' : '';
-      el.textContent = prefix + devInfo.displayName;
-    } else {
-      // 文本中包含用户名
-      el.textContent = text.replace(username, devInfo.displayName);
-    }
-    
+
+    // 只替换文本节点，保留子元素（如头像图片）
+    replaceTextInElement(el, username, devInfo.displayName, text);
+
     // 添加提示
     el.title = `Domain: ${devInfo.domain}\nGitHub: ${username}\nEmail: ${devInfo.github_acc}`;
+  }
+}
+
+// 替换元素中的文本，保留子元素
+function replaceTextInElement(el, username, displayName, originalText) {
+  // 检查元素是否有子元素（如 img）
+  if (el.children.length === 0) {
+    // 没有子元素，可以直接替换 textContent
+    if (originalText === username || originalText === `@${username}`) {
+      const prefix = originalText.startsWith('@') ? '@' : '';
+      el.textContent = prefix + displayName;
+    } else {
+      el.textContent = originalText.replace(username, displayName);
+    }
+  } else {
+    // 有子元素，只替换文本节点
+    const childNodes = Array.from(el.childNodes);
+    childNodes.forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const nodeText = node.textContent;
+        if (nodeText.includes(username)) {
+          node.textContent = nodeText.replace(username, displayName);
+        }
+      }
+    });
   }
 }
 
@@ -342,7 +397,7 @@ function extractUsername(el, text) {
   if (hovercardType && hovercardType !== 'user') {
     return null; // 跳过 repository、organization 等类型
   }
-  
+
   // 尝试从 href 提取
   const href = el.getAttribute('href');
   if (href) {
@@ -352,7 +407,7 @@ function extractUsername(el, text) {
       return match[1];
     }
   }
-  
+
   // 从 data-hovercard-url 提取（仅当是 user 类型时）
   const hovercardUrl = el.getAttribute('data-hovercard-url');
   if (hovercardUrl && hovercardUrl.includes('/users/')) {
@@ -361,13 +416,13 @@ function extractUsername(el, text) {
       return match[1];
     }
   }
-  
+
   // 从文本提取 (去掉 @ 前缀)，但文本不能包含 /
   const cleanText = text.replace(/^@/, '').trim();
   if (/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(cleanText) && !cleanText.includes('/')) {
     return cleanText;
   }
-  
+
   return null;
 }
 
@@ -375,7 +430,7 @@ function extractUsername(el, text) {
 function processTextNodes() {
   // 特殊处理 commit 消息等位置的 @mention
   const mentionRegex = /@([a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)/g;
-  
+
   const walker = document.createTreeWalker(
     document.body,
     NodeFilter.SHOW_TEXT,
@@ -399,21 +454,21 @@ function processTextNodes() {
       }
     }
   );
-  
+
   const nodesToReplace = [];
   let node;
   while (node = walker.nextNode()) {
     nodesToReplace.push(node);
   }
-  
+
   nodesToReplace.forEach(textNode => {
     const text = textNode.textContent;
     let newText = text;
     let hasReplacement = false;
-    
+
     // 重置正则表达式
     mentionRegex.lastIndex = 0;
-    
+
     let match;
     while ((match = mentionRegex.exec(text)) !== null) {
       const username = match[1];
@@ -423,7 +478,7 @@ function processTextNodes() {
         hasReplacement = true;
       }
     }
-    
+
     if (hasReplacement) {
       const parent = textNode.parentElement;
       if (parent && !parent.hasAttribute('data-gnm-original')) {
@@ -439,7 +494,7 @@ function setupObserver() {
   if (observer) {
     observer.disconnect();
   }
-  
+
   observer = new MutationObserver((mutations) => {
     // 防抖处理
     clearTimeout(observer.timeout);
@@ -454,7 +509,7 @@ function setupObserver() {
       }
     }, 100);
   });
-  
+
   observer.observe(document.body, {
     childList: true,
     subtree: true
@@ -474,13 +529,13 @@ document.addEventListener('visibilitychange', () => {
 function setupMentionAutocomplete() {
   // 创建弹出框
   createMentionPopup();
-  
+
   // 监听输入事件（使用事件委托）
   document.addEventListener('input', handleInput, true);
   document.addEventListener('keydown', handleKeydown, true);
   document.addEventListener('click', handleClickOutside, true);
   document.addEventListener('blur', handleBlur, true);
-  
+
   // 快捷键 Ctrl+Shift+2 (即 Ctrl+@) 或 Ctrl+Shift+M 打开补全
   document.addEventListener('keydown', handleShortcut, true);
 }
@@ -488,30 +543,30 @@ function setupMentionAutocomplete() {
 // 处理快捷键
 function handleShortcut(e) {
   if (!isEnabled || !featureMention || developerList.length === 0) return;
-  
+
   // Mac: Cmd+Shift+M, Windows/Linux: Ctrl+Shift+M
   // 或 Cmd/Ctrl+Shift+2 (即 @)
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
   const modKey = isMac ? e.metaKey : e.ctrlKey;
-  
+
   const isModShift2 = modKey && e.shiftKey && e.key === '2';
   const isModShiftM = modKey && e.shiftKey && (e.key === 'm' || e.key === 'M');
-  
+
   if (isModShift2 || isModShiftM) {
     log('快捷键触发', { key: e.key, isMac, modKey: modKey });
-    
+
     const target = e.target;
     if (!isEditableElement(target)) {
       log('目标不是可编辑元素', target);
       return;
     }
-    
+
     e.preventDefault();
-    
+
     const { cursorPos } = getTextAndCursor(target);
     mentionStartPos = cursorPos;
     currentInput = target;
-    
+
     // 显示所有用户
     filteredUsers = searchUsers('');
     selectedIndex = 0;
@@ -527,7 +582,7 @@ function createMentionPopup() {
     log('弹出框已存在');
     return;
   }
-  
+
   mentionPopup = document.createElement('div');
   mentionPopup.className = 'gnm-mention-popup';
   mentionPopup.style.display = 'none';
@@ -538,28 +593,28 @@ function createMentionPopup() {
 // 处理输入事件
 function handleInput(e) {
   if (!isEnabled || !featureMention || developerList.length === 0) return;
-  
+
   const target = e.target;
   if (!isEditableElement(target)) return;
-  
+
   const { text, cursorPos } = getTextAndCursor(target);
   if (text === null) return;
-  
+
   // 查找 @@ 双 @ 符号位置（避免与 GitHub 原生 @ 冲突）
   const beforeCursor = text.substring(0, cursorPos);
   const atMatch = beforeCursor.match(/@@([a-zA-Z0-9\u4e00-\u9fa5_-]*)$/);
-  
+
   log('输入事件', { beforeCursor: beforeCursor.slice(-10), hasMatch: !!atMatch });
-  
+
   if (atMatch) {
     const query = atMatch[1].toLowerCase();
     mentionStartPos = cursorPos - atMatch[1].length - 2; // @@ 符号的位置
     currentInput = target;
-    
+
     // 搜索匹配的用户
     filteredUsers = searchUsers(query);
     log('@@ 匹配', { query, results: filteredUsers.length });
-    
+
     if (filteredUsers.length > 0) {
       selectedIndex = 0;
       showMentionPopup(target, cursorPos);
@@ -576,10 +631,10 @@ function handleInput(e) {
 function isEditableElement(el) {
   if (!el) return false;
   const tagName = el.tagName.toLowerCase();
-  return tagName === 'textarea' || 
-         tagName === 'input' ||
-         el.isContentEditable ||
-         el.getAttribute('contenteditable') === 'true';
+  return tagName === 'textarea' ||
+    tagName === 'input' ||
+    el.isContentEditable ||
+    el.getAttribute('contenteditable') === 'true';
 }
 
 // 获取文本和光标位置
@@ -592,12 +647,12 @@ function getTextAndCursor(el) {
   } else if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
     const selection = window.getSelection();
     if (selection.rangeCount === 0) return { text: null, cursorPos: 0 };
-    
+
     const range = selection.getRangeAt(0);
     const preCaretRange = range.cloneRange();
     preCaretRange.selectNodeContents(el);
     preCaretRange.setEnd(range.endContainer, range.endOffset);
-    
+
     return {
       text: el.textContent,
       cursorPos: preCaretRange.toString().length
@@ -612,7 +667,7 @@ function searchUsers(query) {
     // 空查询返回前 8 个用户
     return developerList.slice(0, 8);
   }
-  
+
   const lowerQuery = query.toLowerCase();
   return developerList
     .filter(user => user.searchText.includes(lowerQuery))
@@ -623,7 +678,7 @@ function searchUsers(query) {
 function showMentionPopup(target, cursorPos) {
   const rect = getCaretRect(target, cursorPos);
   log('获取光标位置', rect);
-  
+
   if (!rect) {
     log('无法获取光标位置，使用目标元素位置');
     // 回退方案：使用目标元素的位置
@@ -640,7 +695,7 @@ function showMentionPopup(target, cursorPos) {
     mentionPopup.style.top = `${rect.bottom + 4}px`;
     mentionPopup.style.zIndex = '99999';
   }
-  
+
   log('弹出框已显示', {
     display: mentionPopup.style.display,
     left: mentionPopup.style.left,
@@ -655,11 +710,11 @@ function getCaretRect(el, cursorPos) {
   if (el.tagName.toLowerCase() === 'textarea' || el.tagName.toLowerCase() === 'input') {
     // 获取输入框在视口中的位置
     const elRect = el.getBoundingClientRect();
-    
+
     // 使用 mirror div 技术计算光标在输入框内的相对位置
     const mirror = document.createElement('div');
     const computed = getComputedStyle(el);
-    
+
     // 复制样式
     const props = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'padding', 'border', 'boxSizing', 'letterSpacing', 'wordSpacing'];
     props.forEach(prop => mirror.style[prop] = computed[prop]);
@@ -671,29 +726,29 @@ function getCaretRect(el, cursorPos) {
     mirror.style.wordWrap = 'break-word';
     mirror.style.width = `${el.clientWidth}px`;
     mirror.style.overflow = 'hidden';
-    
+
     // 考虑滚动位置
     const textBeforeCursor = el.value.substring(0, cursorPos);
     mirror.textContent = textBeforeCursor;
-    
+
     const span = document.createElement('span');
     span.textContent = '|';
     mirror.appendChild(span);
-    
+
     document.body.appendChild(mirror);
-    
+
     // 计算 span 在 mirror 中的相对位置
     const mirrorRect = mirror.getBoundingClientRect();
     const spanRect = span.getBoundingClientRect();
     const relativeLeft = spanRect.left - mirrorRect.left;
     const relativeTop = spanRect.top - mirrorRect.top;
-    
+
     document.body.removeChild(mirror);
-    
+
     // 转换为视口坐标，并考虑输入框的滚动
     const scrollTop = el.scrollTop || 0;
     const scrollLeft = el.scrollLeft || 0;
-    
+
     return {
       left: elRect.left + relativeLeft - scrollLeft,
       bottom: elRect.top + relativeTop + spanRect.height - scrollTop
@@ -727,7 +782,7 @@ function renderMentionList() {
     log('错误: mentionPopup 不存在');
     return;
   }
-  
+
   const html = filteredUsers.map((user, index) => `
     <div class="gnm-mention-item ${index === selectedIndex ? 'selected' : ''}" data-index="${index}">
       <span class="gnm-mention-github">@${escapeHtml(user.github_name)}</span>
@@ -735,10 +790,10 @@ function renderMentionList() {
       ${user.domain ? `<span class="gnm-mention-domain">${escapeHtml(user.domain)}</span>` : ''}
     </div>
   `).join('');
-  
+
   mentionPopup.innerHTML = html;
   log('渲染列表', { count: filteredUsers.length, htmlLength: html.length });
-  
+
   // 绑定点击事件
   mentionPopup.querySelectorAll('.gnm-mention-item').forEach(item => {
     item.addEventListener('mousedown', (e) => {
@@ -764,10 +819,10 @@ function updateSelection() {
 function selectUser(index) {
   const user = filteredUsers[index];
   if (!user || !currentInput) return;
-  
+
   const { text } = getTextAndCursor(currentInput);
   if (text === null) return;
-  
+
   // 获取当前光标位置
   let cursorPos;
   if (currentInput.tagName.toLowerCase() === 'textarea' || currentInput.tagName.toLowerCase() === 'input') {
@@ -782,14 +837,14 @@ function selectUser(index) {
       cursorPos = preCaretRange.toString().length;
     }
   }
-  
+
   // 计算替换范围 - @@ 触发的话从 @@ 开始替换，快捷键触发的话直接插入
   const beforeTrigger = text.substring(0, mentionStartPos);
   const afterCursor = text.substring(cursorPos);
   const insertText = '@' + user.github_name + ' ';
   const newText = beforeTrigger + insertText + afterCursor;
   const newCursorPos = mentionStartPos + insertText.length;
-  
+
   // 插入文本
   if (currentInput.tagName.toLowerCase() === 'textarea' || currentInput.tagName.toLowerCase() === 'input') {
     currentInput.value = newText;
@@ -815,14 +870,14 @@ function selectUser(index) {
       currentInput.dispatchEvent(new Event('input', { bubbles: true }));
     }, 0);
   }
-  
+
   hideMentionPopup();
 }
 
 // 处理键盘事件
 function handleKeydown(e) {
   if (mentionPopup?.style.display === 'none' || filteredUsers.length === 0) return;
-  
+
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault();
