@@ -59,16 +59,35 @@
 
 /* ==================== 头像高亮样式 ==================== */
 
-/* 头像高亮 - 直接修改边框颜色 */
-img.gnm-avatar-highlight {
+/* 头像高亮 - 使用多重样式确保可见性 */
+img.gnm-avatar-highlight,
+.gnm-avatar-highlight {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
   border: 2px solid #58a6ff !important;
   border-radius: 50% !important;
   box-sizing: border-box !important;
-  transition: border-color 0.2s !important;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2) !important;
+  transition: all 0.2s ease !important;
+  outline: none !important;
 }
 
-img.gnm-avatar-highlight:hover {
+img.gnm-avatar-highlight:hover,
+.gnm-avatar-highlight:hover {
   border-color: #a371f7 !important;
+  box-shadow: 0 0 0 2px rgba(163, 113, 247, 0.3) !important;
+}
+
+/* 针对 PR conversation 页面的特殊样式加强 */
+.timeline-comment-avatar img.gnm-avatar-highlight,
+.timeline-comment img.gnm-avatar-highlight,
+.TimelineItem-avatar img.gnm-avatar-highlight {
+  display: inline-block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  border: 3px solid #58a6ff !important;
+  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3), 0 2px 8px rgba(88, 166, 255, 0.2) !important;
 }
 
 /* ==================== Mention 自动补全样式 ==================== */

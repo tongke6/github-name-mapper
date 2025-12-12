@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **本地规则导入/导出** - 支持从本地 JSON 文件导入本地规则，并支持导出当前本地规则
 - **发布打包脚本** - 增加基于 Node 的自动打包脚本（可通过 npm 调用），生成带版本号的 Chrome Web Store ZIP 包
 
+### 🐛 Bug Fixes / 修复
+
+**English:**
+- Fixed avatar not displaying in PR conversation page when username is replaced
+- Enhanced avatar selectors and username extraction for PR timeline comments
+- Added explicit visibility styles to ensure avatar highlight is displayed properly
+
+**中文：**
+- 修复 PR conversation 页面替换用户名后头像不显示的问题
+- 增强 PR timeline 评论区的头像选择器和用户名提取
+- 添加显式可见性样式确保头像高亮正常显示
+
 ## [1.0.1] - 2025-12-04
 
 ### 🎉 New Features / 新功能
